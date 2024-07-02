@@ -8,6 +8,8 @@
 !*.py
 !*.ipynb
 !*.md
+!*.png
+!*.jpg
 
 # 폴더 내부 파일 포함
 !*/
@@ -17,7 +19,7 @@
 !**/*.ipynb
 !**/*.md
 
-# other 폴더 내의 파일 무시
+# 폴더 내의 파일 무시
 /other/*.py
 /other/*.ipynb
 /other/*.md
@@ -32,3 +34,5 @@
 /DLthon/**/*.md
 
 .idea/*
+/0604/**/*.jpg
+/0604/**/*.png
