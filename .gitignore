@@ -36,3 +36,6 @@
 .idea/*
 /0604/**/*.jpg
 /0604/**/*.png
+/keras_book_code/**/*.png
+/keras_book_code/**/*.jpg
+/sementic_seg/**/*.jpg
