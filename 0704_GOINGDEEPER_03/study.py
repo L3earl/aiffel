@@ -107,3 +107,76 @@ def generate_cam(model, item):
 
 cam_image = generate_cam(cam_model, item)
 plt.imshow(cam_image)
+
+def visualize_cam_on_image(src1, src2, alpha=0.5):
+    beta = (1.0 - alpha)
+    merged_image = cv2.addWeighted(src1, alpha, src2, beta, 0.0)
+    return merged_image
+
+
+origin_image = item['image'].astype(np.uint8) # unit8로 변환하여 타입 맞춰줌
+# 0~1로 만든 cam_image를 0~255로 변경
+# RGB 채널에 맞춰 3개의 채널로 복사
+# axis=-1은 마지막 차원을 의미
+cam_image_3channel = np.stack([cam_image*255]*3, axis=-1).astype(np.uint8)
+
+blended_image = visualize_cam_on_image(cam_image_3channel, origin_image)
+plt.imshow(blended_image)
+
+#%% g-cam
+
+item = get_one(ds_test)
+print(item['label'])
+plt.imshow(item['image'])
+
+
+def generate_grad_cam(model, activation_layer, item):
+    item = copy.deepcopy(item)
+    width = item['image'].shape[1]
+    height = item['image'].shape[0]
+    img_tensor, class_idx = normalize_and_resize_img(item)
+    
+    # Grad cam에서도 cam과 같이 특정 레이어의 output을 필요로 하므로 모델의 input과 output을 새롭게 정의합니다.
+    # 이때 원하는 레이어가 다를 수 있으니 해당 레이어의 이름으로 찾은 후 output으로 추가합니다.
+    grad_model = tf.keras.models.Model(model.inputs, [model.get_layer(activation_layer).output, model.output])
+    
+    # Gradient를 얻기 위해 tape를 사용합니다.
+    with tf.GradientTape() as tape:
+        conv_output, pred = grad_model(tf.expand_dims(img_tensor, 0))
+    
+        loss = pred[:, class_idx] # 원하는 class(여기서는 정답으로 활용) 예측값을 얻습니다.
+        output = conv_output[0] # 원하는 layer의 output을 얻습니다. feature map 정보 (7,7,2048)
+        grad_val = tape.gradient(loss, conv_output)[0] # 예측값에 따른 Layer의 gradient를 얻습니다.
+
+    weights = np.mean(grad_val, axis=(0, 1)) # gradient의 GAP으로 weight를 구합니다.
+    grad_cam_image = np.zeros(dtype=np.float32, shape=conv_output.shape[0:2])
+    for k, w in enumerate(weights):
+        # output의 k번째 채널과 k번째 weight를 곱하고 누적해서 class activation map을 얻습니다.
+        grad_cam_image += w * output[:, :, k]
+        
+    grad_cam_image = tf.math.maximum(0, grad_cam_image)
+    grad_cam_image /= np.max(grad_cam_image)
+    grad_cam_image = grad_cam_image.numpy()
+    grad_cam_image = cv2.resize(grad_cam_image, (width, height))
+    return grad_cam_image
+
+
+grad_cam_image = generate_grad_cam(cam_model, 'conv5_block3_out', item)
+plt.imshow(grad_cam_image)
+
+
+#%%
+def get_bbox(cam_image, score_thresh=0.05):
+    low_indicies = cam_image <= score_thresh
+    cam_image[low_indicies] = 0
+    cam_image = (cam_image*255).astype(np.uint8)
+    
+    contours,_ = cv2.findContours(cam_image, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    cnt = contours[0]
+    rotated_rect = cv2.minAreaRect(cnt)
+    rect = cv2.boxPoints(rotated_rect)
+    rect = np.int0(rect)
+    return rect
+
+rect = get_bbox(cam_image)
+rect
