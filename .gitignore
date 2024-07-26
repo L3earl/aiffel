@@ -10,6 +10,9 @@
 !*.md
 !*.png
 !*.jpg
+!*.yaml
+!Dockerfile
+!requirements.txt
 
 # 폴더 내부 파일 포함
 !*/

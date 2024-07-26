@@ -1,0 +1,20 @@
+# docker-compose.yaml
+services:
+  redis:
+    image: redislabs/redismod
+    ports:
+      - "6379:6379"
+
+  web:
+    build:
+      context: .
+      target: builder
+    ports:
+      - "8000:8000"
+    volumes:
+      - web-data:/app
+    depends_on:
+      - redis
+
+volumes:
+  web-data:
