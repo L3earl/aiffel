@@ -1,0 +1,23 @@
+#파이썬 이미지를 이용하여 docker 이미지 생성
+FROM amd64/python:3.9-slim
+
+# apt-get update: 패키지 목록을 업데이트합니다.
+# apt-get install -y postgresql-client: PostgreSQL 클라이언트를 설치합니다. 이 클라이언트는 데이터베이스 서버와 상호 작용할 수 있게 해줍니다.
+# rm -rf /var/lib/apt/lists/*: 설치 후 사용하지 않는 패키지 목록 캐시를 삭제하여 이미지 크기를 줄입니다.
+RUN apt-get update && apt-get install -y \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /usr/app
+
+# from 파이썬으로 pip가 설치되기 때문에, run pip 를 바로 할 수 있음
+RUN pip install -U pip &&\
+    pip install scikit-learn pandas psycopg2-binary
+
+COPY data_generator.py data_generator.py
+
+# 파이썬 실행 + data_generator.py 스크립트를 실행하며, --db-host 인수를 기본으로 받습니다
+ENTRYPOINT ["python", "data_generator.py", "--db-host"]
+#Change CMD to solve host finding error
+# ENTRYPOINT 명령에 전달할 기본 인수로 localhost를 설정합니다. 즉, 전체 명령어는 python data_generator.py --db-host localhost가 됩니다. 이 줄은 데이터베이스 호스트를 localhost로 지정
+CMD ["localhost"]
