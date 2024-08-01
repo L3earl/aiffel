@@ -36,6 +36,7 @@
 /DLthon/**/*.py
 /DLthon/**/*.ipynb
 /DLthon/**/*.md
+/**/.venv/*
 
 .idea/*
 /0604/**/*.jpg
