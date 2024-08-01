@@ -1,0 +1,92 @@
+version: "3"
+
+services:
+  db:
+    image: mysql:8.2.0
+    environment:
+      MYSQL_ROOT_PASSWORD: 1234 
+      MYSQL_DATABASE: test_db
+      MYSQL_USER: earl
+      MYSQL_PASSWORD: 5678
+    ports:
+      - "3306:3306"
+    volumes:
+      #- db_data:/var/lib/mysql  # MySQL 데이터 볼륨 <- 이렇게하면 상대적인 위치 C:\ProgramData\Docker\volumes\ 에 저장됨
+      - C:/Users/saink/PycharmProjects/aiffel/0801_MLOps/db_data:/var/lib/mysql
+
+  #Backend Store
+  #MLflow 의 운영 정보, 모델 결과 등을 저장할 물리적인 PostgreSQL DB 서버 스펙을 정의
+  #하이퍼파라미터, loss, metric등 저장
+  mlflow-backend-store:
+    image: postgres:14.0
+    container_name: mlflow-backend-store
+    environment:
+      POSTGRES_USER: mlflowuser
+      POSTGRES_PASSWORD: mlflowpassword
+      POSTGRES_DB: mlflowdatabase
+    prots:
+      - 5432:5432
+    healthcheck: #DB 서버가 잘 띄워졌는지 상태를 확인하기 위해 상태를 체크
+      test: ["CMD", "pg_isready", "-q", "-U", "mlflowuser", "-d", "mlflowdatabase"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  #Artifact Store
+  #기본적인 파일 시스템 보다 체계적으로 관리 할 수 있으며 외부에 있는 스토리지 서버도 사용 할 수 있다는 장점
+  #학습된 모델을 저장할 물리적인 저장 공간인 MinIO 서버 스펙을 정의
+  mlflow-artifact-store:
+    image: minio/minio:RELEASE.2024-01-18T22-51-28Z
+    container_name: mlflow-artifact-store
+    #호스트와 컨테이너의 포트를 설정합니다.
+    #MinIO 의 API 포트를 9000으로 포트 포워딩합니다. (호스트 포트)
+    #MinIO 의 Console 포트를 9001으로 포트 포워딩합니다.
+    ports:
+      - 9000:9000
+      - 9001:9001
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: miniostorage
+    #MinIO 서버를 실행시키는 명령어를 추가합니다.
+    #--console-address 를 통해 컨테이너의 9001 포트로 MinIO 에 접근할 수 있도록 주소를 열어줍니다.
+    command: server /data/minio --console-address :9001
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  #앞서 만든 Backend Store 와 Artifact Store 에 접근 가능한 MLflow 서버를 생성
+  mlflow-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: python-mlflow-server
+    depends_on:
+      mlflow-backend-store:
+        condition: service_healthy
+      mlflow-artifact-store:
+        condition: service_healthy
+    #외부에서 접근할 때는 호스트의 포트 5001을 사용하고, 컨테이너 내부에서는 포트 5000을 사용
+    ports:
+      - 5001:5000
+    environment:
+      AWS_ACCESS_KEY_ID: minio
+      AWS_SECRET_ACCESS_KEY: miniostorage
+      MLFLOW_S3_ENDPOINT_URL: http://mlflow-artifact-store:9000
+    #command : MinIO 초기 버켓을 생성 하고, MLflow 서버를 실행합니다.
+    #mc config ~ : MinIO Client 를 활용해 MinIO 서버에 호스트를 등록합니다.
+    #mc mb ~ : 등록된 호스트를 통해 초기 버켓을 생성합니다.
+    #mlflow server : MLflow 서버를 동작시킵니다.
+    #--backend-store-uri : 명시된 정보를 통해 PostgreSQL DB 와 연결합니다.
+    #--default-artifact-root : 명시된 버켓을 통해 MinIO 의 초기 버켓과 연결합니다.
+    command:
+      - /bin/sh
+      - -c
+      - |
+        mc config host add mlflowminio http://mlflow-artifact-store:9000 minio miniostorage &&
+        mc mb --ignore-existing mlflowminio/mlflow
+        mlflow server \
+        --backend-store-uri postgresql://mlflowuser:mlflowpassword@mlflow-backend-store/mlflowdatabase \
+        --default-artifact-root s3://mlflow/ \
+        --host 0.0.0.0
